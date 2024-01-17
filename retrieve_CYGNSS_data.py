@@ -8,10 +8,11 @@ import numpy as np
 import time
 
 # Function to update input data with CYGNSS information
-def update_input_data(input_data, CYGNSS_info, close_points, input_vars, date):
+def update_input_data(input_data, CYGNSS_info, close_points, dist_to_station, input_vars, date):
     for var in input_vars:
         input_data[var].extend(CYGNSS_info[var][close_points])
     input_data['date'].extend([date] * len(close_points))
+    input_data['dist_to_station'].extend(dist_to_station[close_points])
 
 # Function to calculate haversine distance
 def haversine(lat1, lon1, lat2, lon2):
@@ -23,12 +24,6 @@ def haversine(lat1, lon1, lat2, lon2):
     radius = 6371.0
     distance = radius * c
     return distance
-
-# Function to check if a point is within a specified region
-def is_in_region(lat, lon, p0, max_distance):
-    distance = haversine(lat, lon, p0['lat'], p0['lon'])
-    within_region = distance < max_distance
-    return np.where(within_region)[0]
 
 # Function to extract values from CSV content
 def extract_values(csv_content, var_list, offset):
@@ -73,7 +68,7 @@ def opendap_request(date, cygID, var_list, retries=3):
 
     for _ in range(retries):
         try:
-            response = requests.get(url, auth=HTTPBasicAuth('username', 'password'))
+            response = requests.get(url, auth=HTTPBasicAuth('santiagooz', 'Esttemilo12'))
             response.raise_for_status()  # Raise an HTTPError for bad responses
             return response
         except ChunkedEncodingError as e:
@@ -111,9 +106,10 @@ output_data = {'soil_moisture': []}
 
 input_data = {var: [] for var in var_list}
 input_data['date'] = []
+input_data['dist_to_station'] = []
 
 p0 = {} # stations locations
-max_distance = 1.5  # maximum distance between ISMN sensor and SP location [km]
+max_distance = 3  # maximum distance between ISMN sensor and SP location [km]
 
 cntr = 0
 start_time = time.time()
@@ -137,8 +133,10 @@ while current_date != end_date:
                         for i in range(num_stations):
                             p0['lat'] = float(stations_dict[str(i)]['Latitude'])
                             p0['lon'] = float(stations_dict[str(i)]['Longitude'])
-
-                            close_points = is_in_region(CYGNSS_info['sp_lat'], CYGNSS_info['sp_lon'], p0, max_distance)
+                            
+                            dist_to_station = haversine(CYGNSS_info['sp_lat'], CYGNSS_info['sp_lon'], p0['lat'], p0['lon'])
+                            close_points = np.where(dist_to_station < max_distance)[0]
+                            
 
                             if len(close_points) > 0:
                                 print(close_points)
@@ -153,7 +151,7 @@ while current_date != end_date:
                                     idx = np.argmax((dates == current_date) & (np.abs(secs - t0) < 1800))
                                     output_data['soil_moisture'].append(float(lines[idx + 1][2]))
 
-                                update_input_data(input_data, CYGNSS_info, close_points, var_list, current_date)
+                                update_input_data(input_data, CYGNSS_info, close_points, dist_to_station, var_list, current_date)
 
             else:
                 print('404 - CYGNSS Data file not found')
@@ -168,12 +166,14 @@ while current_date != end_date:
         num_cases = len(output_data['soil_moisture'])
         print('Process started at ' + time_str + f' - Number of cases: {num_cases} - Time remaining: {hours} hours, {minutes} minutes, {seconds} seconds')
 
-
+    input_dates = input_data['date']
+    input_data['date'] = [str(date) for date in input_data['date']]
     # Save input and output data to JSON files
     with open('input_sm_data.json', 'w') as json_file:
         json.dump(input_data, json_file, indent=2)
 
     with open('output_sm_data.json', 'w') as json_file:
         json.dump(output_data, json_file, indent=2)
+    input_data['date'] = input_dates
 
     current_date += datetime.timedelta(days=1)
