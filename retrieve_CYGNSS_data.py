@@ -68,7 +68,7 @@ def opendap_request(date, cygID, var_list, retries=3):
 
     for _ in range(retries):
         try:
-            response = requests.get(url, auth=HTTPBasicAuth('santiagooz', 'Esttemilo12'))
+            response = requests.get(url, auth=HTTPBasicAuth('username', 'password'))
             response.raise_for_status()  # Raise an HTTPError for bad responses
             return response
         except ChunkedEncodingError as e:
